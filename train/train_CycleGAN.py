@@ -5,14 +5,14 @@ from utils.function.function import *
 from utils.function.dataloader import *
 
 def training_CycleGAN(size=256,gpu_num=[0]):
-    data_path = 'G:/Contrast-enhanced Problem/Nect CT Png/none_enhanced_png/'
+    data_path = '/home/eslab/dataset/Nect CT Png/none_enhanced_png/'
     data_list = os.listdir(data_path)
     data_list.sort()
     data_list  = [data_path + filename + '/' for filename in data_list]
 
     n_epochs = 200
     decay_epoch = 100
-    batch_size = 256
+    batch_size = 32
     lr = 0.0002
     n_cpu = multiprocessing.cpu_count() // 2
 
@@ -67,19 +67,19 @@ def training_CycleGAN(size=256,gpu_num=[0]):
                                                                                            decay_epoch).step)
 
     Tensor = torch.cuda.FloatTensor if cuda else torch.Tensor
-    input_A = Tensor(batch_size, 1, size, size)
-    input_B = Tensor(batch_size, 1, size, size)
-    target_real = Variable(Tensor(batch_size).fill_(1.0), requires_grad=False)
-    target_fake = Variable(Tensor(batch_size).fill_(0.0), requires_grad=False)
+    # input_A = Tensor(batch_size, 1, size, size)
+    # input_B = Tensor(batch_size, 1, size, size)
+    # target_real = Variable(Tensor(batch_size).fill_(1.0), requires_grad=False)
+    # target_fake = Variable(Tensor(batch_size).fill_(0.0), requires_grad=False)
 
     fake_A_buffer = ReplayBuffer()
     fake_B_buffer = ReplayBuffer()
 
-    transforms_train = [transforms.Resize(size,Image.BICUBIC),
+    transforms_train = [transforms.Resize((size,size),Image.BICUBIC),
                         transforms.RandomHorizontalFlip(),
                         transforms.ToTensor(),
                         transforms.Normalize((0.5),(0.5))]
-    transforms_val = [transforms.Resize(size,Image.BICUBIC),
+    transforms_val = [transforms.Resize((size,size),Image.BICUBIC),
                         transforms.ToTensor(),
                         transforms.Normalize((0.5),(0.5))]
 
@@ -88,14 +88,24 @@ def training_CycleGAN(size=256,gpu_num=[0]):
     train_list = data_list[:train_split]
     val_list = data_list[train_split:]
 
-    train_loader = ImageDataset(dataset_list=train_list,transforms_=transforms_train)
-    val_loader = ImageDataset(dataset_list = val_list,transforms_=transforms_val)
+    train_dataset = ImageDataset(dataset_list=train_list,transforms_=transforms_train)
+    val_dataset = ImageDataset(dataset_list = val_list,transforms_=transforms_val)
+
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, num_workers=n_cpu)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, num_workers=n_cpu)
+
     Best_loss_G = 0
+    
     for epoch in range(0,n_epochs):
+        total_loss_G = 0.
+        total_loss_D_N = 0.
+        total_loss_D_E = 0.
         with tqdm(train_loader, desc='Train', unit='batch') as tepoch:
             for index, batch in enumerate(tepoch):
-                real_n_enhance_image = Variable(input_A.copy_(batch['n_enhanced_image']))
-                real_enhance_image = Variable(input_B.copy_(batch['enhanced_image']))
+                real_n_enhance_image = batch['n_enhanced_image'].to(device)
+                real_enhance_image = batch['enhanced_image'].to(device)
+                target_real = Variable(Tensor(len(real_n_enhance_image)).fill_(1.0), requires_grad=False)
+                target_fake = Variable(Tensor(len(real_n_enhance_image)).fill_(0.0), requires_grad=False)
 
                 optimizer_G.zero_grad()
 
@@ -163,10 +173,17 @@ def training_CycleGAN(size=256,gpu_num=[0]):
 
                 loss_D_E.backward()
                 optimizer_D_E.step()
-                tepoch.set_postfix(loss_G = loss_G, loss_D_NE = loss_D_NE, loss_D_E = loss_D_E)
+                total_loss_G += loss_G.item()
+                total_loss_D_E = loss_D_E.item()
+                total_loss_D_N = loss_D_NE.item()
+                tepoch.set_postfix(loss_G = total_loss_G/(index+1), loss_D_NE = total_loss_D_N/(index+1), loss_D_E = total_loss_D_E/(index+1))
+
         lr_scheduler_G.step()
         lr_scheduler_D_A.step()
         lr_scheduler_D_B.step()
+
+        total_loss_G = 0.
+
         with tqdm(val_loader, desc='Val', unit='batch') as tepoch:
             for index, batch in enumerate(tepoch):
                 with torch.no_grad():
@@ -197,33 +214,33 @@ def training_CycleGAN(size=256,gpu_num=[0]):
 
                     # Total Loss
                     loss_G = loss_identity_E + loss_identity_NE + loss_GAN_F2R + loss_GAN_R2F + loss_cycle_E + loss_cycle_N
-
-                    tepoch.set_postfix(loss_G=loss_G)
-
-                    if epoch == 0:
-                        Best_loss_G = loss_G
-                        if len(gpu_num) > 1:
-                            torch.save(netG_N2E.module.state_dict(), 'saved_model/netG_N2E.pth')
-                            torch.save(netG_E2N.module.state_dict(), 'saved_model/netG_E2N.pth')
-                            torch.save(netD_N.module.state_dict(), 'saved_model/netD_N.pth')
-                            torch.save(netD_E.module.state_dict(), 'saved_model/netD_E.pth')
-                        else:
-                            torch.save(netG_N2E.state_dict(), 'saved_model/netG_N2E.pth')
-                            torch.save(netG_E2N.state_dict(), 'saved_model/netG_E2N.pth')
-                            torch.save(netD_N.state_dict(), 'saved_model/netD_N.pth')
-                            torch.save(netD_E.state_dict(), 'saved_model/netD_E.pth')
+                    total_loss_G += loss_G.item()
+                    tepoch.set_postfix(loss_G=total_loss_G/(index+1))
+            total_loss_G = total_loss_G / (index + 1)
+            if epoch == 0:
+                Best_loss_G = total_loss_G
+                if len(gpu_num) > 1:
+                    torch.save(netG_N2E.module.state_dict(), 'saved_model/netG_N2E.pth')
+                    torch.save(netG_E2N.module.state_dict(), 'saved_model/netG_E2N.pth')
+                    torch.save(netD_N.module.state_dict(), 'saved_model/netD_N.pth')
+                    torch.save(netD_E.module.state_dict(), 'saved_model/netD_E.pth')
+                else:
+                    torch.save(netG_N2E.state_dict(), 'saved_model/netG_N2E.pth')
+                    torch.save(netG_E2N.state_dict(), 'saved_model/netG_E2N.pth')
+                    torch.save(netD_N.state_dict(), 'saved_model/netD_N.pth')
+                    torch.save(netD_E.state_dict(), 'saved_model/netD_E.pth')
+            else:
+                if Best_loss_G > total_loss_G:
+                    if len(gpu_num) > 1:
+                        torch.save(netG_N2E.module.state_dict(), 'saved_model/netG_N2E.pth')
+                        torch.save(netG_E2N.module.state_dict(), 'saved_model/netG_E2N.pth')
+                        torch.save(netD_N.module.state_dict(), 'saved_model/netD_N.pth')
+                        torch.save(netD_E.module.state_dict(), 'saved_model/netD_E.pth')
                     else:
-                        if Best_loss_G > loss_G:
-                            if len(gpu_num) > 1:
-                                torch.save(netG_N2E.module.state_dict(), 'saved_model/netG_N2E.pth')
-                                torch.save(netG_E2N.module.state_dict(), 'saved_model/netG_E2N.pth')
-                                torch.save(netD_N.module.state_dict(), 'saved_model/netD_N.pth')
-                                torch.save(netD_E.module.state_dict(), 'saved_model/netD_E.pth')
-                            else:
-                                torch.save(netG_N2E.state_dict(), 'saved_model/netG_N2E.pth')
-                                torch.save(netG_E2N.state_dict(), 'saved_model/netG_E2N.pth')
-                                torch.save(netD_N.state_dict(), 'saved_model/netD_N.pth')
-                                torch.save(netD_E.state_dict(), 'saved_model/netD_E.pth')
-                        else:
-                            print('Not Saved...')
+                        torch.save(netG_N2E.state_dict(), 'saved_model/netG_N2E.pth')
+                        torch.save(netG_E2N.state_dict(), 'saved_model/netG_E2N.pth')
+                        torch.save(netD_N.state_dict(), 'saved_model/netD_N.pth')
+                        torch.save(netD_E.state_dict(), 'saved_model/netD_E.pth')
+                else:
+                    print('Not Saved...')
 

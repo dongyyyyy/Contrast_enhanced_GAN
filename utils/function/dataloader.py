@@ -17,8 +17,9 @@ class ImageDataset(Dataset):
             image_list = os.listdir(signals_path)
             image_list.sort()
             current_path = dataset_folder
+            # print('current_path ==> ', current_path)
             enhance_path = current_path.split('/')
-            enhance_path[-2] = 'enhanced_png'
+            enhance_path[-3] = 'enhanced_png'
             enhance_path = '/'.join(enhance_path)+'/'
             for filename in image_list:
                 none_enhance_image_list.append(dataset_folder+filename)
@@ -31,11 +32,11 @@ class ImageDataset(Dataset):
         self.none_enhanced_image_list, self.enhanced_image_list = self.read_dataset()
 
     def __getitem__(self, index):
-        none_enhanced_image = self.transform(Image.open(self.none_enhanced_image_list[index % len(self.none_enhanced_image_list)]))
+        none_enhanced_image = self.transform(Image.open(self.none_enhanced_image_list[index % len(self.none_enhanced_image_list)]).convert('L'))
 
-        enhanced_image = self.transform(Image.open(self.enhanced_image_list[index % len(self.enhanced_image_list)]))
+        enhanced_image = self.transform(Image.open(self.enhanced_image_list[index % len(self.enhanced_image_list)]).convert('L'))
 
-
+        # print('none_enhanced_image shape = ',none_enhanced_image.shape)
         return {'n_enhanced_image': none_enhanced_image, 'enhanced_image': enhanced_image}
 
     def __len__(self):

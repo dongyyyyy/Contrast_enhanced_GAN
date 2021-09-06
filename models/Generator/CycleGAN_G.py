@@ -98,7 +98,7 @@ class CycleGAN_G(nn.Module):
     def forward(self,x):
         out = self.conv_input(x)
         out = self.downsample_block(out)
-        print(out.shape)
+        # print(out.shape)
         out = self.residual_block(out)
         out = self.upsample_block(out)
         out = self.conv_output(out)
