@@ -13,7 +13,7 @@
 #### number of total epochs : 200
 #### number of decay epochs : 100 ( Linear learning rate decay )
 #### learning rate = 0.0002
-#### input image size = 256 %2^8%
+#### input image size = 256
 #### Transforms compose : Horizon flip, resize, normalize std = 0.5, mean = 0.5 (Gray Scale)
 #### Optimizer = Adam
 #### GAN Loss = MSE
