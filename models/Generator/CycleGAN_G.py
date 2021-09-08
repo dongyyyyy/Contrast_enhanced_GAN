@@ -60,7 +60,7 @@ class CycleGAN_G(nn.Module):
 
     def make_residualBlocks(self,kernel_size=3,n_residual_blocks=9):
         blocks = []
-        print('self.input_channel : ',self.input_channel)
+        # print('self.input_channel : ',self.input_channel)
         for _ in range(n_residual_blocks):
             blocks += [ResidualBlock(in_features=self.input_channel, norm_layer=self.norm_layer, kernel_size=kernel_size, dropout_p=self.dropout_p, use_bias=self.use_bias,
                         padding_type=self.padding_type)]

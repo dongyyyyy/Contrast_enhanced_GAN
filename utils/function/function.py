@@ -2,6 +2,7 @@ import torch
 import random
 from torch.autograd import Variable
 
+
 class LambdaLR():
     def __init__(self, n_epochs, offset, decay_start_epoch):
         assert ((n_epochs - decay_start_epoch) > 0), "Decay must start before the training session ends!"

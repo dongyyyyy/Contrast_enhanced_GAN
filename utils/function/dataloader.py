@@ -7,6 +7,7 @@ from PIL import Image
 import torchvision.transforms as transforms
 
 
+
 class ImageDataset(Dataset):
     def read_dataset(self):
         none_enhance_image_list = []
@@ -26,8 +27,9 @@ class ImageDataset(Dataset):
                 enhance_image_list.append(enhance_path+filename)
         return none_enhance_image_list, enhance_image_list
 
-    def __init__(self, dataset_list,transforms_=None):
+    def __init__(self, dataset_list,transforms_=None,mode='train'):
         self.transform = transforms.Compose(transforms_)
+        self.mode = mode
         self.dataset_list = dataset_list
         self.none_enhanced_image_list, self.enhanced_image_list = self.read_dataset()
 
@@ -37,7 +39,9 @@ class ImageDataset(Dataset):
         enhanced_image = self.transform(Image.open(self.enhanced_image_list[index % len(self.enhanced_image_list)]).convert('L'))
 
         # print('none_enhanced_image shape = ',none_enhanced_image.shape)
-        return {'n_enhanced_image': none_enhanced_image, 'enhanced_image': enhanced_image}
-
+        if self.mode == 'train':
+            return {'n_enhanced_image': none_enhanced_image, 'enhanced_image': enhanced_image}
+        else:
+            return {'n_enhanced_image': none_enhanced_image, 'enhanced_image': enhanced_image,'path':'/'.join(self.none_enhanced_image_list[index % len(self.none_enhanced_image_list)].split('/')[-2:])}
     def __len__(self):
         return max(len(self.none_enhanced_image_list), len(self.enhanced_image_list))
