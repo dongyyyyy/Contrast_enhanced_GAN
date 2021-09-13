@@ -4,7 +4,7 @@ from torchsummary import summary
 import torch
 
 class UNet_block(nn.Module):
-    def __init__(self, in_channel, out_channel, kernel_size=3,norm_layer='instance',middle_channel=None,use_bias=False,activation_func = 'ReLU'):
+    def __init__(self, in_channel, out_channel,kernel_size=3,norm_layer='instance',middle_channel=None,use_bias=False,activation_func = 'ReLU'):
         super().__init__()
         if middle_channel == None:
             middle_channel = out_channel
@@ -22,7 +22,7 @@ class UNet_block(nn.Module):
         if activation_func =='ReLU':
             blocks += [nn.ReLU(inplace=True)]
         elif activation_func =='leakyReLU':
-            blocks += [nn.LeakyReLU(negative_slope=0.01,inplace=True)]
+            blocks += [nn.LeakyReLU(negative_slope=0.2,inplace=True)]
 
         blocks += [nn.Conv2d(in_channels=middle_channel,out_channels=out_channel,kernel_size = kernel_size,stride=1,padding=kernel_size//2,bias=use_bias)]
         if norm_layer == 'instance':
@@ -32,7 +32,7 @@ class UNet_block(nn.Module):
         if activation_func =='ReLU':
             blocks += [nn.ReLU(inplace=True)]
         elif activation_func =='leakyReLU':
-            blocks += [nn.LeakyReLU(negative_slope=0.01,inplace=True)]
+            blocks += [nn.LeakyReLU(negative_slope=0.2,inplace=True)]
         
         return nn.Sequential(*blocks)
 
@@ -59,37 +59,48 @@ class UNet_upBlock(nn.Module):
                         middle_channel=in_channel//2,use_bias=use_bias,activation_func = activation_func)
         else:
             self.up = nn.ConvTranspose2d(in_channel, in_channel // 2, kernel_size=2, stride=2,bias=use_bias)
+            if norm_layer == 'instance':
+                self.norm = nn.InstanceNorm2d(num_features=in_channel // 2, affine=False, track_running_stats=False)
+            elif norm_layer == 'batch':
+                self.norm = nn.BatchNorm2d(num_features=in_channel // 2, affine=True, track_running_stats=True)
+            if activation_func =='ReLU':
+                self.activate = nn.ReLU(inplace=True)
+            elif activation_func =='leakyReLU':
+                self.activate = nn.LeakyReLU(negative_slope=0.2,inplace=True)
             self.conv = UNet_block(in_channel=in_channel, out_channel=out_channel, kernel_size=kernel_size,norm_layer=norm_layer,
                         middle_channel=middle_channel,use_bias=use_bias,activation_func = activation_func)
     def forward(self, x1, x2):
         x1 = self.up(x1)
+        x1 = self.norm(x1)
+        x1 = self.activate(x1)
+        
         x = torch.cat([x2,x1],dim=1)
         return self.conv(x)
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=1,out_channels=1,kernel_size=3,norm_layer='batch', activation_func='ReLU',use_bias=False,bilinear=False,scale=2):
+    def __init__(self, in_channels=1,out_channels=1,blocks=[64,128,256,512,1024],kernel_size=3,norm_layer='batch', activation_func='ReLU',use_bias=False,bilinear=False,scale=2):
         super().__init__()
-        self.in_conv = UNet_block(in_channel=in_channels, out_channel=64,kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,use_bias=use_bias,activation_func=activation_func)
+        self.in_conv = UNet_block(in_channel=in_channels, out_channel=blocks[0],kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,use_bias=use_bias,activation_func=activation_func)
         # in_channel, out_channel, kernel_size=3,norm_layer='instance',middle_channel=None,use_bias=False,activation_func = 'ReLU'
-        self.down1 = Unet_downBlock(in_channel=64, out_channel=128,kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
+        self.down1 = Unet_downBlock(in_channel=blocks[0], out_channel=blocks[1],kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
                                     use_bias=use_bias,activation_func=activation_func,scale=scale)
-        self.down2 = Unet_downBlock(in_channel=128, out_channel=256,kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
+        self.down2 = Unet_downBlock(in_channel=blocks[1], out_channel=blocks[2],kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
                                     use_bias=use_bias,activation_func=activation_func,scale=scale)
-        self.down3 = Unet_downBlock(in_channel=256, out_channel=512,kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
+        self.down3 = Unet_downBlock(in_channel=blocks[2], out_channel=blocks[3],kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
                                     use_bias=use_bias,activation_func=activation_func,scale=scale)
-        self.down4 = Unet_downBlock(in_channel=512, out_channel=1024,kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
+        self.down4 = Unet_downBlock(in_channel=blocks[3], out_channel=blocks[4],kernel_size=kernel_size,norm_layer=norm_layer,middle_channel=None,
                                     use_bias=use_bias,activation_func=activation_func,scale=scale)
 
         # in_channel, out_channel, kernel_size=3, norm_layer='instance',middle_channel=None,use_bias=False,activation_func='ReLU',scale=2,bilinear=False
-        self.up1 = UNet_upBlock(in_channel=1024, out_channel=512, kernel_size=3, norm_layer=norm_layer,middle_channel=None,
+        self.up1 = UNet_upBlock(in_channel=blocks[4], out_channel=blocks[3], kernel_size=kernel_size, norm_layer=norm_layer,middle_channel=None,
                                 use_bias=use_bias,activation_func=activation_func,scale=scale,bilinear=bilinear)
-        self.up2 = UNet_upBlock(in_channel=512, out_channel=256, kernel_size=3, norm_layer=norm_layer,middle_channel=None,
+        self.up2 = UNet_upBlock(in_channel=blocks[3], out_channel=blocks[2], kernel_size=kernel_size, norm_layer=norm_layer,middle_channel=None,
                                 use_bias=use_bias,activation_func=activation_func,scale=scale,bilinear=bilinear)
-        self.up3 = UNet_upBlock(in_channel=256, out_channel=128, kernel_size=3, norm_layer=norm_layer,middle_channel=None,
+        self.up3 = UNet_upBlock(in_channel=blocks[2], out_channel=blocks[1], kernel_size=kernel_size, norm_layer=norm_layer,middle_channel=None,
                                 use_bias=use_bias,activation_func=activation_func,scale=scale,bilinear=bilinear)
-        self.up4 = UNet_upBlock(in_channel=128, out_channel=64, kernel_size=3, norm_layer=norm_layer,middle_channel=None,
+        self.up4 = UNet_upBlock(in_channel=blocks[1], out_channel=blocks[0], kernel_size=kernel_size, norm_layer=norm_layer,middle_channel=None,
                                 use_bias=use_bias,activation_func=activation_func,scale=scale,bilinear=bilinear)
-        self.out_conv = nn.Conv2d(64, out_channels, kernel_size=1,bias=use_bias)
+        self.out_conv = nn.Conv2d(blocks[0], out_channels, kernel_size=1,bias=use_bias)
  
 
     def forward(self, x):
